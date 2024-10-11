@@ -783,7 +783,7 @@ class AVHubertModel(nn.Module):
             )  # features: [B, F, T]
         return features_video
 
-    def modality_fusion(self, features_audio, features_video):
+    def modality_fusion(self, features_audio, features_video, audio_ratio=0.8):
         if features_video is None and features_audio is not None:
             features_video = features_audio.new_zeros(
                 features_audio.size(0), self.encoder_embed_dim, features_audio.size(-1)
@@ -795,14 +795,19 @@ class AVHubertModel(nn.Module):
         else:
             features_video = features_video
             features_audio = features_audio
-
         if self.modality_fuse == "concat":
             features = torch.cat([features_audio, features_video], dim=1)
         elif self.modality_fuse == "add":
             features = features_audio + features_video
+        elif self.modality_fuse == "select":
+            features = np.zeros([features_audio.size(0), self.encoder_embed_dim, features_audio.size(-1)])
+            for i in range(features_audio.size(0)):
+                random_ratio = np.random.rand()
+                if random_ratio < audio_ratio:
+                    features[i] = features_audio[i]
+                else: features[i] = features_video[i]
         else:
             ValueError(f"unknown fusion method: {self.modality_fuse}")
-
         return features
 
     def forward_transformer(self, source, padding_mask=None, output_layer=None):
