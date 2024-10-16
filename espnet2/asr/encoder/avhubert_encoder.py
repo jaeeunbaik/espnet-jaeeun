@@ -26,6 +26,7 @@ from typeguard import typechecked
 
 from espnet2.asr.encoder.abs_encoder import AbsEncoder
 from espnet.nets.pytorch_backend.nets_utils import make_pad_mask
+from espnet.nets.pytorch_backend.backbones.modules.conv1d_extractor import Conv1dResNet
 
 logger = logging.getLogger(__name__)
 
@@ -573,15 +574,16 @@ class AVHubertConfig:
 
 
 class SubModel(nn.Module):
-    def __init__(self, resnet=None, input_dim=None, cfg=None):
+    def __init__(self, audio=True, input_dim=None, cfg=None):
         super().__init__()
-        self.resnet = resnet
+        self.audio = audio
         self.proj = nn.Linear(input_dim, cfg.encoder_embed_dim)
         self.encoder = TransformerEncoder(cfg) if cfg.encoder_layers > 0 else None
-
+        self.conv1d = Conv1dResNet(relu_type=cfg.audio_extractor_relu_type)
     def forward(self, x):
-        if self.resnet is not None:
-            x = self.resnet(x)
+        if self.audio:
+            x = self.conv1d(x)
+        else: x = self.resnet(x)
         x = self.proj(x.transpose(1, 2))
         if self.encoder is not None:
             x = self.encoder(x)[0].transpose(1, 2)
@@ -608,10 +610,10 @@ class AVHubertModel(nn.Module):
         sub_cfg.encoder_layers = sub_cfg.sub_encoder_layers
         resnet = ResEncoder(relu_type=cfg.resnet_relu_type, weights=cfg.resnet_weights)
         self.feature_extractor_audio = SubModel(
-            resnet=None, input_dim=cfg.audio_feat_dim, cfg=sub_cfg
+            audio=True, input_dim=cfg.audio_feat_dim, cfg=sub_cfg
         )
         self.feature_extractor_video = SubModel(
-            resnet=resnet, input_dim=resnet.backend_out, cfg=sub_cfg
+            audio=False, input_dim=resnet.backend_out, cfg=sub_cfg
         )
         self.modality_dropout, self.audio_dropout = (
             cfg.modality_dropout,
@@ -653,6 +655,7 @@ class AVHubertModel(nn.Module):
 
         self.dropout_input = nn.Dropout(cfg.dropout_input)
         self.dropout_features = nn.Dropout(cfg.dropout_features)
+        self.audio_ratio = cfg.audio_ratio
 
         self.feature_grad_mult = cfg.feature_grad_mult
         self.logit_temp = cfg.logit_temp
@@ -795,11 +798,11 @@ class AVHubertModel(nn.Module):
         else:
             features_video = features_video
             features_audio = features_audio
-        if self.modality_fuse == "concat":
+        if self.modality_fuse == "concat": # Output : [B, 2F, T]
             features = torch.cat([features_audio, features_video], dim=1)
-        elif self.modality_fuse == "add":
+        elif self.modality_fuse == "add": # Output : [B, F, T]
             features = features_audio + features_video
-        elif self.modality_fuse == "select":
+        elif self.modality_fuse == "select": # Output : [B, F, T]
             features = np.zeros([features_audio.size(0), self.encoder_embed_dim, features_audio.size(-1)])
             for i in range(features_audio.size(0)):
                 random_ratio = np.random.rand()

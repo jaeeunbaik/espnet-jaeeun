@@ -13,6 +13,9 @@ import soundfile
 from tqdm import tqdm
 from typeguard import typechecked
 
+import sys 
+import os
+sys.path.append('/home/jenny/espnet-jaeeun/')
 from espnet2.fileio.read_text import read_2columns_text
 from espnet2.fileio.sound_scp import SoundScpWriter, soundfile_read
 from espnet2.fileio.vad_scp import VADScpReader
