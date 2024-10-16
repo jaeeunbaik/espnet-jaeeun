@@ -103,6 +103,7 @@ function partial_diff {
 }
 
 check_sorted_and_uniq $data/utt2spk
+
 if ! $no_spk_sort; then
   ! sort -k2 -C $data/utt2spk && \
      echo "$0: utt2spk is not in sorted order when sorted first on speaker-id " && \
@@ -251,4 +252,153 @@ if [ -f $data/wav.scp ]; then
             }
             END {
               if (warning_issued == 1) {
-                print "The channel should be marked as A or B, not 1! You should cha
+                print "The channel should be marked as A or B, not 1! You should change it ASAP! "
+              }
+            }' && echo "$0: badly formatted reco2file_and_channel file" && exit 1;
+      cat $data/reco2file_and_channel | awk '{print $1}' > $tmpdir/utts.r2fc
+      if ! cmp -s $tmpdir/utts{,.r2fc}; then
+        echo "$0: Error: in $data, utterance-ids extracted from segments and reco2file_and_channel"
+        echo "$0: differ, partial diff is:"
+        partial_diff $tmpdir/utts{,.r2fc}
+        exit 1;
+      fi
+    fi
+  fi
+fi
+
+if [ ! -f $data/feats.scp ] && ! $no_feats; then
+  echo "$0: no such file $data/feats.scp (if this is by design, specify --no-feats)"
+  exit 1;
+fi
+
+if [ -f $data/feats.scp ]; then
+  check_sorted_and_uniq $data/feats.scp
+  cat $data/feats.scp | awk '{print $1}' > $tmpdir/utts.feats
+  if ! cmp -s $tmpdir/utts{,.feats}; then
+    echo "$0: Error: in $data, utterance-ids extracted from utt2spk and features"
+    echo "$0: differ, partial diff is:"
+    partial_diff $tmpdir/utts{,.feats}
+    exit 1;
+  fi
+fi
+
+
+if [ -f $data/cmvn.scp ]; then
+  check_sorted_and_uniq $data/cmvn.scp
+  cat $data/cmvn.scp | awk '{print $1}' > $tmpdir/speakers.cmvn
+  cat $data/spk2utt | awk '{print $1}' > $tmpdir/speakers
+  if ! cmp -s $tmpdir/speakers{,.cmvn}; then
+    echo "$0: Error: in $data, speaker lists extracted from spk2utt and cmvn"
+    echo "$0: differ, partial diff is:"
+    partial_diff $tmpdir/speakers{,.cmvn}
+    exit 1;
+  fi
+fi
+
+if [ -f $data/spk2gender ]; then
+  check_sorted_and_uniq $data/spk2gender
+  ! cat $data/spk2gender | awk '{if (!((NF == 2 && ($2 == "m" || $2 == "f")))) exit 1; }' && \
+     echo "$0: Mal-formed spk2gender file" && exit 1;
+  cat $data/spk2gender | awk '{print $1}' > $tmpdir/speakers.spk2gender
+  cat $data/spk2utt | awk '{print $1}' > $tmpdir/speakers
+  if ! cmp -s $tmpdir/speakers{,.spk2gender}; then
+    echo "$0: Error: in $data, speaker lists extracted from spk2utt and spk2gender"
+    echo "$0: differ, partial diff is:"
+    partial_diff $tmpdir/speakers{,.spk2gender}
+    exit 1;
+  fi
+fi
+
+if [ -f $data/spk2warp ]; then
+  check_sorted_and_uniq $data/spk2warp
+  ! cat $data/spk2warp | awk '{if (!((NF == 2 && ($2 > 0.5 && $2 < 1.5)))){ print; exit 1; }}' && \
+     echo "$0: Mal-formed spk2warp file" && exit 1;
+  cat $data/spk2warp | awk '{print $1}' > $tmpdir/speakers.spk2warp
+  cat $data/spk2utt | awk '{print $1}' > $tmpdir/speakers
+  if ! cmp -s $tmpdir/speakers{,.spk2warp}; then
+    echo "$0: Error: in $data, speaker lists extracted from spk2utt and spk2warp"
+    echo "$0: differ, partial diff is:"
+    partial_diff $tmpdir/speakers{,.spk2warp}
+    exit 1;
+  fi
+fi
+
+if [ -f $data/utt2warp ]; then
+  check_sorted_and_uniq $data/utt2warp
+  ! cat $data/utt2warp | awk '{if (!((NF == 2 && ($2 > 0.5 && $2 < 1.5)))){ print; exit 1; }}' && \
+     echo "$0: Mal-formed utt2warp file" && exit 1;
+  cat $data/utt2warp | awk '{print $1}' > $tmpdir/utts.utt2warp
+  cat $data/utt2spk | awk '{print $1}' > $tmpdir/utts
+  if ! cmp -s $tmpdir/utts{,.utt2warp}; then
+    echo "$0: Error: in $data, utterance lists extracted from utt2spk and utt2warp"
+    echo "$0: differ, partial diff is:"
+    partial_diff $tmpdir/utts{,.utt2warp}
+    exit 1;
+  fi
+fi
+
+# check some optionally-required things
+for f in vad.scp utt2lang utt2uniq; do
+  if [ -f $data/$f ]; then
+    check_sorted_and_uniq $data/$f
+    if ! cmp -s <( awk '{print $1}' $data/utt2spk ) \
+      <( awk '{print $1}' $data/$f ); then
+      echo "$0: error: in $data, $f and utt2spk do not have identical utterance-id list"
+      exit 1;
+    fi
+  fi
+done
+
+
+if [ -f $data/utt2dur ]; then
+  check_sorted_and_uniq $data/utt2dur
+  cat $data/utt2dur | awk '{print $1}' > $tmpdir/utts.utt2dur
+  if ! cmp -s $tmpdir/utts{,.utt2dur}; then
+    echo "$0: Error: in $data, utterance-ids extracted from utt2spk and utt2dur file"
+    echo "$0: differ, partial diff is:"
+    partial_diff $tmpdir/utts{,.utt2dur}
+    exit 1;
+  fi
+  cat $data/utt2dur | \
+    awk '{ if (NF != 2 || !($2 > 0)) { print "Bad line utt2dur:" NR ":" $0; exit(1) }}' || exit 1
+fi
+
+if [ -f $data/utt2num_frames ]; then
+  check_sorted_and_uniq $data/utt2num_frames
+  cat $data/utt2num_frames | awk '{print $1}' > $tmpdir/utts.utt2num_frames
+  if ! cmp -s $tmpdir/utts{,.utt2num_frames}; then
+    echo "$0: Error: in $data, utterance-ids extracted from utt2spk and utt2num_frames file"
+    echo "$0: differ, partial diff is:"
+    partial_diff $tmpdir/utts{,.utt2num_frames}
+    exit 1
+  fi
+  awk <$data/utt2num_frames '{
+    if (NF != 2 || !($2 > 0) || $2 != int($2)) {
+      print "Bad line utt2num_frames:" NR ":" $0
+      exit 1 } }' || exit 1
+fi
+
+if [ -f $data/reco2dur ]; then
+  check_sorted_and_uniq $data/reco2dur
+  cat $data/reco2dur | awk '{print $1}' > $tmpdir/recordings.reco2dur
+  if [ -f $tmpdir/recordings ]; then
+    if ! cmp -s $tmpdir/recordings{,.reco2dur}; then
+      echo "$0: Error: in $data, recording-ids extracted from segments and reco2dur file"
+      echo "$0: differ, partial diff is:"
+      partial_diff $tmpdir/recordings{,.reco2dur}
+    exit 1;
+    fi
+  else
+    if ! cmp -s $tmpdir/{utts,recordings.reco2dur}; then
+      echo "$0: Error: in $data, recording-ids extracted from wav.scp and reco2dur file"
+      echo "$0: differ, partial diff is:"
+      partial_diff $tmpdir/{utts,recordings.reco2dur}
+    exit 1;
+    fi
+  fi
+  cat $data/reco2dur | \
+    awk '{ if (NF != 2 || !($2 > 0)) { print "Bad line : " $0; exit(1) }}' || exit 1
+fi
+
+
+echo "$0: Successfully validated data-directory $data"
